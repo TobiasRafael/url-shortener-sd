@@ -13,4 +13,8 @@
     <ProjectReference Include="..\UrlShortener.Core\UrlShortener.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="UrlShortener.Infrastructure.Tests" />
+  </ItemGroup>
+
 </Project>
