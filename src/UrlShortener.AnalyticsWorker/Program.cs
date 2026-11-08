@@ -1,7 +1,8 @@
-using UrlShortener.AnalyticsWorker;
-
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddHostedService<Worker>();
+
+builder.AddServiceDefaults();
+
+// The Event Hubs click consumer is registered here in the analytics stage.
 
 var host = builder.Build();
 host.Run();
