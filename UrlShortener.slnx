@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/UrlShortener.AnalyticsWorker/UrlShortener.AnalyticsWorker.csproj" />
+    <Project Path="src/UrlShortener.Api/UrlShortener.Api.csproj" />
+    <Project Path="src/UrlShortener.AppHost/UrlShortener.AppHost.csproj" />
+    <Project Path="src/UrlShortener.Core/UrlShortener.Core.csproj" />
+    <Project Path="src/UrlShortener.Infrastructure/UrlShortener.Infrastructure.csproj" />
+    <Project Path="src/UrlShortener.ServiceDefaults/UrlShortener.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/UrlShortener.Api.Tests/UrlShortener.Api.Tests.csproj" />
+    <Project Path="tests/UrlShortener.Core.Tests/UrlShortener.Core.Tests.csproj" />
+  </Folder>
+</Solution>
