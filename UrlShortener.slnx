@@ -10,5 +10,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/UrlShortener.Api.Tests/UrlShortener.Api.Tests.csproj" />
     <Project Path="tests/UrlShortener.Core.Tests/UrlShortener.Core.Tests.csproj" />
+    <Project Path="tests/UrlShortener.Infrastructure.Tests/UrlShortener.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>
