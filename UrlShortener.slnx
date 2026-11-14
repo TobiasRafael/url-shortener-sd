@@ -8,6 +8,7 @@
     <Project Path="src/UrlShortener.ServiceDefaults/UrlShortener.ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/UrlShortener.AnalyticsWorker.Tests/UrlShortener.AnalyticsWorker.Tests.csproj" />
     <Project Path="tests/UrlShortener.Api.Tests/UrlShortener.Api.Tests.csproj" />
     <Project Path="tests/UrlShortener.AppHost.Tests/UrlShortener.AppHost.Tests.csproj" />
     <Project Path="tests/UrlShortener.Core.Tests/UrlShortener.Core.Tests.csproj" />

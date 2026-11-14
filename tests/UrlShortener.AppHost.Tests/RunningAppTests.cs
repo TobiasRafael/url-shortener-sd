@@ -8,8 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace UrlShortener.AppHost.Tests;
 
 /// <summary>
-/// Starts the whole distributed app (the API, the Cosmos DB emulator and Redis in Docker) once
-/// for the test class, the same way <c>aspire run</c> does locally.
+/// Starts the whole distributed app (the API, the analytics worker, and the Cosmos DB, Event Hubs,
+/// Storage and Redis emulators in Docker) once for the test class, the same way <c>aspire run</c>
+/// does locally.
 /// </summary>
 /// <remarks>
 /// Without Docker these tests are <i>skipped</i>. CI sets <c>REQUIRE_COSMOS_EMULATOR=true</c>
@@ -50,6 +51,8 @@ public sealed class RunningAppFixture : IAsyncLifetime
             _app = await builder.BuildAsync(startup.Token);
             await _app.StartAsync(startup.Token);
             await _app.ResourceNotifications.WaitForResourceHealthyAsync("api", startup.Token);
+            // The worker has no health endpoint; Running means its dependencies were ready and it started.
+            await _app.ResourceNotifications.WaitForResourceAsync("analytics-worker", KnownResourceStates.Running, startup.Token);
 
             // Not app.CreateHttpClient: the tests assert on the 302 itself, so redirects must not be followed.
 #pragma warning disable CA2000 // the client owns and disposes the handler
@@ -135,17 +138,8 @@ public sealed class RunningAppTests(RunningAppFixture fixture) : IClassFixture<R
             redirect.Headers.Location.ShouldBe(new Uri(longUrl));
         }
 
-        // Clicks are buffered and flushed to Cosmos in the background, so poll briefly.
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        long clicks;
-        do
-        {
-            await Task.Delay(250, Ct);
-            var stats = await api.GetFromJsonAsync<JsonElement>($"/api/v1/links/{code}/stats", Json, Ct);
-            clicks = stats.GetProperty("totalClicks").GetInt64();
-        }
-        while (clicks < 1 && DateTime.UtcNow < deadline);
-        clicks.ShouldBe(1);
+        // The click goes API buffer → Event Hubs → analytics worker → Cosmos, all asynchronously.
+        (await WaitForClicksAsync(api, code, expected: 1)).ShouldBe(1);
 
         // The owner's links come from a cross-partition Cosmos query.
         using var mine = new HttpRequestMessage(HttpMethod.Get, "/api/v1/users/me/links");
@@ -156,6 +150,62 @@ public sealed class RunningAppTests(RunningAppFixture fixture) : IClassFixture<R
     }
 
     [Fact]
+    public async Task Bursts_of_clicks_on_several_links_are_counted_exactly_through_event_hubs()
+    {
+        var api = fixture.RequireApi();
+        var apiKey = await RegisterAsync(api);
+        int[] clicksPerLink = [1, 7, 25];
+
+        var codes = new List<string>();
+        foreach (var _ in clicksPerLink)
+        {
+            codes.Add(await CreateLinkAsync(api, apiKey, $"https://example.com/burst/{Guid.NewGuid():N}"));
+        }
+
+        // Concurrent redirects, so clicks for different links interleave in the same batches and events.
+        await Task.WhenAll(codes.Zip(clicksPerLink).SelectMany(pair =>
+            Enumerable.Range(0, pair.Second).Select(async _ =>
+            {
+                using var redirect = await api.GetAsync($"/{pair.First}", Ct);
+                redirect.StatusCode.ShouldBe(HttpStatusCode.Found);
+            })));
+
+        foreach (var (code, expected) in codes.Zip(clicksPerLink))
+        {
+            (await WaitForClicksAsync(api, code, expected)).ShouldBe(expected);
+        }
+
+        // A few more flush intervals: a batch written twice would show up now.
+        await Task.Delay(TimeSpan.FromSeconds(6), Ct);
+        foreach (var (code, expected) in codes.Zip(clicksPerLink))
+        {
+            (await GetTotalClicksAsync(api, code)).ShouldBe(expected);
+        }
+    }
+
+    [Fact]
+    public async Task Head_requests_redirect_without_counting_even_through_the_worker()
+    {
+        var api = fixture.RequireApi();
+        var apiKey = await RegisterAsync(api);
+        var code = await CreateLinkAsync(api, apiKey, $"https://example.com/head/{Guid.NewGuid():N}");
+
+        using var headRequest = new HttpRequestMessage(HttpMethod.Head, $"/{code}");
+        using (var head = await api.SendAsync(headRequest, Ct))
+        {
+            head.StatusCode.ShouldBe(HttpStatusCode.Found);
+        }
+        using (var get = await api.GetAsync($"/{code}", Ct))
+        {
+            get.StatusCode.ShouldBe(HttpStatusCode.Found);
+        }
+
+        (await WaitForClicksAsync(api, code, expected: 1)).ShouldBe(1);
+        await Task.Delay(TimeSpan.FromSeconds(6), Ct);
+        (await GetTotalClicksAsync(api, code)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task The_api_reports_healthy_with_its_dependencies_connected()
     {
         var api = fixture.RequireApi();
@@ -163,5 +213,45 @@ public sealed class RunningAppTests(RunningAppFixture fixture) : IClassFixture<R
         using var response = await api.GetAsync("/health", Ct);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static async Task<string> RegisterAsync(HttpClient api)
+    {
+        using var registration = await api.PostAsJsonAsync(
+            "/api/v1/users", new { name = "AppHost Test", email = $"{Guid.NewGuid():N}@example.com" }, Ct);
+        registration.StatusCode.ShouldBe(HttpStatusCode.Created);
+        return (await registration.Content.ReadFromJsonAsync<JsonElement>(Json, Ct)).GetProperty("apiKey").GetString()!;
+    }
+
+    private static async Task<string> CreateLinkAsync(HttpClient api, string apiKey, string longUrl)
+    {
+        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/v1/links") { Content = JsonContent.Create(new { longUrl }) };
+        create.Headers.Add("X-Api-Key", apiKey);
+        using var created = await api.SendAsync(create, Ct);
+        created.StatusCode.ShouldBe(HttpStatusCode.Created);
+        return (await created.Content.ReadFromJsonAsync<JsonElement>(Json, Ct)).GetProperty("code").GetString()!;
+    }
+
+    private static async Task<long> GetTotalClicksAsync(HttpClient api, string code)
+    {
+        var stats = await api.GetFromJsonAsync<JsonElement>($"/api/v1/links/{code}/stats", Json, Ct);
+        return stats.GetProperty("totalClicks").GetInt64();
+    }
+
+    /// <summary>
+    /// Polls until the count reaches <paramref name="expected"/>. Generous, because the first
+    /// clicks after startup also wait for the worker to claim its partitions.
+    /// </summary>
+    private static async Task<long> WaitForClicksAsync(HttpClient api, string code, long expected)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(90);
+        long clicks;
+        do
+        {
+            await Task.Delay(250, Ct);
+            clicks = await GetTotalClicksAsync(api, code);
+        }
+        while (clicks < expected && DateTime.UtcNow < deadline);
+        return clicks;
     }
 }

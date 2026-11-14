@@ -35,6 +35,13 @@ public static class ClickEventSerializer
             throw new NotSupportedException($"Unsupported click envelope version {envelope.V}.");
         }
 
+        // The serializer leaves missing properties null, so check the shape here: the consumer has
+        // to be able to tell a malformed event (skip it) from a failing database (retry).
+        if (envelope.Clicks is null || envelope.Clicks.Any(c => c is null || string.IsNullOrEmpty(c.C)))
+        {
+            throw new JsonException("Click envelope is missing its clicks or a click's code.");
+        }
+
         return [.. envelope.Clicks.Select(c => new ClickEvent(c.C, DateTimeOffset.FromUnixTimeMilliseconds(c.T)))];
     }
 

@@ -36,13 +36,32 @@ var cache = builder.AddAzureManagedRedis("cache")
     .WithAccessKeyAuthentication()
     .RunAsContainer();
 
+// ---- Click stream: the API publishes clicks to Event Hubs, the analytics worker consumes them --
+// The emulator and the checkpoint storage are throwaway even locally. Checkpoints only make sense
+// together with the hub they point into, and clicks in flight are not worth keeping between runs;
+// the stats they turn into live in Cosmos, which does persist.
+var eventHubs = builder.AddAzureEventHubs("eventhubs").RunAsEmulator();
+var clicks = eventHubs.AddHub("clicks");
+
+// A consumer group of its own, so other readers (an archive, a fraud check) can be added later
+// without sharing the worker's checkpoints.
+var analyticsClicks = clicks.AddConsumerGroup("clicks-analytics", "analytics");
+
+// Blob storage for the processor's checkpoints and partition leases.
+var checkpoints = builder.AddAzureStorage("storage")
+    .RunAsEmulator()
+    .AddBlobs("checkpoints");
+
 // ---- API: REST endpoints and redirects --------------------------------------------------------
 builder.AddProject<Projects.UrlShortener_Api>("api")
     .WithReference(cosmos)
     .WaitFor(cosmos)
     .WithReference(cache)
     .WaitFor(cache)
+    .WithReference(clicks)
+    .WaitFor(eventHubs)
     .WithEnvironment("Storage__Provider", "Cosmos")
+    .WithEnvironment("Analytics__Pipeline", "EventHubs")
     .WithEnvironment("ShortCodes__Secret", shortCodeSecret)
     .WithHttpHealthCheck("/health")
     .WithExternalHttpEndpoints()
@@ -58,5 +77,17 @@ builder.AddProject<Projects.UrlShortener_Api>("api")
             });
         }
     });
+
+// ---- Analytics worker: aggregates clicks into Cosmos stats ------------------------------------
+// No endpoints: it only reads from Event Hubs and writes to Cosmos. Scaling out is running more
+// instances; the processor spreads the hub's partitions across them.
+builder.AddProject<Projects.UrlShortener_AnalyticsWorker>("analytics-worker")
+    .WithReference(analyticsClicks)
+    .WaitFor(eventHubs)
+    .WithReference(checkpoints)
+    .WaitFor(checkpoints)
+    .WithReference(cosmos)
+    .WaitFor(cosmos)
+    .WithEnvironment("Storage__Provider", "Cosmos");
 
 builder.Build().Run();

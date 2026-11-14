@@ -35,6 +35,17 @@ public sealed class ClickEventSerializerTests
     [Fact]
     public void Rejects_malformed_payloads() =>
         Should.Throw<JsonException>(() => ClickEventSerializer.Deserialize(BinaryData.FromString("not json")));
+
+    // Well-formed JSON in the wrong shape must be rejected as malformed too, not surface later as a
+    // NullReferenceException or a database error the consumer would keep retrying.
+    [Theory]
+    [InlineData("""{"v":1}""")]
+    [InlineData("""{"v":1,"clicks":null}""")]
+    [InlineData("""{"v":1,"clicks":[null]}""")]
+    [InlineData("""{"v":1,"clicks":[{"t":1}]}""")]
+    [InlineData("""{"v":1,"clicks":[{"c":"","t":1}]}""")]
+    public void Rejects_envelopes_missing_clicks_or_codes(string json) =>
+        Should.Throw<JsonException>(() => ClickEventSerializer.Deserialize(BinaryData.FromString(json)));
 }
 
 public sealed class DirectStatsSinkTests
