@@ -8,8 +8,8 @@ using Microsoft.Extensions.Logging;
 namespace UrlShortener.AppHost.Tests;
 
 /// <summary>
-/// Starts the whole distributed app (the API, the analytics worker, and the Cosmos DB, Event Hubs,
-/// Storage and Redis emulators in Docker) once for the test class, the same way <c>aspire run</c>
+/// Starts the whole distributed app (the web app, the API, the analytics worker, and the Cosmos DB,
+/// Event Hubs, Storage and Redis emulators in Docker) once for the test class, the same way <c>aspire run</c>
 /// does locally.
 /// </summary>
 /// <remarks>
@@ -23,6 +23,9 @@ public sealed class RunningAppFixture : IAsyncLifetime
     private DistributedApplication? _app;
 
     public HttpClient? Api { get; private set; }
+
+    /// <summary>The Angular dev server (<c>ng serve</c>), which proxies <c>/api</c> to the API.</summary>
+    public HttpClient? Web { get; private set; }
 
     public string? UnavailableReason { get; private set; }
 
@@ -53,12 +56,18 @@ public sealed class RunningAppFixture : IAsyncLifetime
             await _app.ResourceNotifications.WaitForResourceHealthyAsync("api", startup.Token);
             // The worker has no health endpoint; Running means its dependencies were ready and it started.
             await _app.ResourceNotifications.WaitForResourceAsync("analytics-worker", KnownResourceStates.Running, startup.Token);
+            // npm install, then the first ng serve build.
+            await _app.ResourceNotifications.WaitForResourceHealthyAsync("web", startup.Token);
 
             // Not app.CreateHttpClient: the tests assert on the 302 itself, so redirects must not be followed.
 #pragma warning disable CA2000 // the client owns and disposes the handler
             Api = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
             {
                 BaseAddress = _app.GetEndpoint("api", "http"),
+            };
+            Web = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+            {
+                BaseAddress = _app.GetEndpoint("web", "http"),
             };
 #pragma warning restore CA2000
         }
@@ -74,9 +83,16 @@ public sealed class RunningAppFixture : IAsyncLifetime
         return Api!;
     }
 
+    public HttpClient RequireWeb()
+    {
+        Assert.SkipWhen(Web is null, UnavailableReason ?? "Distributed app unavailable");
+        return Web!;
+    }
+
     public async ValueTask DisposeAsync()
     {
         Api?.Dispose();
+        Web?.Dispose();
         if (_app is not null)
         {
             await _app.DisposeAsync();
@@ -213,6 +229,55 @@ public sealed class RunningAppTests(RunningAppFixture fixture) : IClassFixture<R
         using var response = await api.GetAsync("/health", Ct);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task The_web_app_serves_the_angular_shell()
+    {
+        var web = fixture.RequireWeb();
+
+        using var response = await web.GetAsync("/", Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.ShouldBe("text/html");
+        var html = await response.Content.ReadAsStringAsync(Ct);
+        html.ShouldContain("<app-root>");
+        html.ShouldContain("<title>URL Shortener</title>");
+    }
+
+    [Fact]
+    public async Task The_web_app_proxies_the_api_and_short_links_point_at_the_api()
+    {
+        var web = fixture.RequireWeb();
+        var api = fixture.RequireApi();
+
+        // What the browser does: everything through the web app's origin.
+        var apiKey = await RegisterAsync(web);
+        var longUrl = $"https://example.com/web/{Guid.NewGuid():N}";
+        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/v1/links") { Content = JsonContent.Create(new { longUrl }) };
+        create.Headers.Add("X-Api-Key", apiKey);
+        using var created = await web.SendAsync(create, Ct);
+        created.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var link = await created.Content.ReadFromJsonAsync<JsonElement>(Json, Ct);
+
+        // The proxy rewrites Host, so the short URL is on the API (which serves the redirect), not on the web app.
+        var shortUrl = new Uri(link.GetProperty("shortUrl").GetString()!);
+        shortUrl.Authority.ShouldBe(api.BaseAddress!.Authority);
+        using var redirect = await api.GetAsync(shortUrl.AbsolutePath, Ct);
+        redirect.StatusCode.ShouldBe(HttpStatusCode.Found);
+        redirect.Headers.Location.ShouldBe(new Uri(longUrl));
+    }
+
+    [Fact]
+    public async Task The_api_root_sends_visitors_to_the_web_app()
+    {
+        var api = fixture.RequireApi();
+        var web = fixture.RequireWeb();
+
+        using var response = await api.GetAsync("/", Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Found);
+        response.Headers.Location.ShouldNotBeNull().Authority.ShouldBe(web.BaseAddress!.Authority);
     }
 
     private static async Task<string> RegisterAsync(HttpClient api)

@@ -1,3 +1,4 @@
+using Aspire.Hosting.JavaScript;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace UrlShortener.AppHost.Tests;
@@ -92,6 +93,43 @@ public sealed class AppModelTests
         // Waiting for the blob service also waits for the storage account it belongs to.
         waits.Select(w => w.Resource.Name).ShouldBe(["eventhubs", "storage", "checkpoints", "cosmos"], ignoreOrder: true);
         worker.Annotations.OfType<EndpointAnnotation>().ShouldNotContain(e => e.IsExternal);
+    }
+
+    [Fact]
+    public async Task The_web_app_runs_ng_serve_after_the_api_and_is_reachable_from_outside()
+    {
+        await using var builder = await CreateAsync();
+        var web = Resource<JavaScriptAppResource>(builder, "web");
+
+        web.Command.ShouldBe("npm");
+        Path.GetFileName(web.WorkingDirectory).ShouldBe("UrlShortener.Web");
+        web.TryGetAnnotationsOfType<WaitAnnotation>(out var waits).ShouldBeTrue();
+        waits.Select(w => w.Resource.Name).ShouldContain("api");
+        web.Annotations.OfType<EndpointAnnotation>().ShouldContain(e => e.Name == "http" && e.IsExternal);
+        web.Annotations.OfType<HealthCheckAnnotation>().ShouldNotBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_web_app_finds_the_api_through_service_discovery()
+    {
+        await using var builder = await CreateAsync();
+        var web = Resource<JavaScriptAppResource>(builder, "web");
+
+        var env = await PublishedEnvironmentAsync(web);
+
+        // proxy.conf.js forwards /api to this address.
+        env.ShouldContainKey("services__api__http__0");
+    }
+
+    [Fact]
+    public async Task The_api_sends_visitors_of_its_root_to_the_web_app()
+    {
+        await using var builder = await CreateAsync();
+        var api = Resource<ProjectResource>(builder, "api");
+
+        var env = await PublishedEnvironmentAsync(api);
+
+        env.ShouldContainKeyAndValue("ShortLinks__FrontendUrl", "{web.bindings.http.url}");
     }
 
     [Fact]
