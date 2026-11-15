@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels the run it replaces; runs on main always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  ASPIRE_CLI_TELEMETRY_OPTOUT: true
+  # GitHub Actions sets CI=true, which turns on TreatWarningsAsErrors (Directory.Build.props),
+  # so analyzer warnings and NuGet audit findings (NU1901-NU1904) fail the build.
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # The AppHost uses AspireUseCliBundle, so DCP and the dashboard come from the Aspire CLI's
+      # bundle rather than NuGet. Install the CLI at the same version as the packages, and fail
+      # early if the AppHost SDK and AspireVersion have drifted apart.
+      - name: Install the Aspire CLI
+        run: |
+          version=$(sed -n 's:.*<AspireVersion>\(.*\)</AspireVersion>.*:\1:p' Directory.Packages.props)
+          sdk=$(sed -n 's:.*Aspire\.AppHost\.Sdk/\([^"]*\)".*:\1:p' src/UrlShortener.AppHost/UrlShortener.AppHost.csproj)
+          if [ -z "$version" ] || [ "$version" != "$sdk" ]; then
+            echo "::error::AspireVersion ($version) and Aspire.AppHost.Sdk ($sdk) must match"
+            exit 1
+          fi
+          curl -sSLf https://aspire.dev/install.sh -o "$RUNNER_TEMP/install-aspire.sh"
+          bash "$RUNNER_TEMP/install-aspire.sh" --version "$version"
+
+      - name: Aspire CLI version
+        run: aspire --version
+
+      - name: Restore
+        run: dotnet restore UrlShortener.slnx
+
+      - name: Build
+        run: dotnet build UrlShortener.slnx -c Release --no-restore
+
+      # Docker is available on ubuntu-latest, so the Cosmos contract tests and the running-app
+      # tests (Cosmos, Event Hubs, Azurite and Redis emulators) run for real. REQUIRE_COSMOS_EMULATOR
+      # turns "emulator unavailable" into a failure instead of a skip.
+      - name: Test
+        env:
+          REQUIRE_COSMOS_EMULATOR: true
+        run: dotnet test --solution UrlShortener.slnx -c Release --no-build
