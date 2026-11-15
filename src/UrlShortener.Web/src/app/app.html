@@ -1,0 +1,36 @@
+<a class="skip-link" href="#main">Skip to content</a>
+
+<mat-toolbar>
+  <a class="brand" routerLink="/"><mat-icon>link</mat-icon>{{ appName }}</a>
+  <nav aria-label="Main">
+    <a
+      mat-button
+      routerLink="/"
+      routerLinkActive="active"
+      [routerLinkActiveOptions]="{ exact: true }"
+      >Shorten</a
+    >
+    @if (auth.isSignedIn()) {
+      <a
+        mat-button
+        routerLink="/links"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        >My links</a
+      >
+    }
+    <a mat-button routerLink="/top" routerLinkActive="active">Top links</a>
+  </nav>
+  <span class="spacer"></span>
+  @if (auth.user(); as user) {
+    <span class="user" [title]="user.email">{{ user.name }}</span>
+    <button mat-button type="button" (click)="signOut()">Sign out</button>
+  } @else {
+    <a mat-button routerLink="/sign-in">Sign in</a>
+    <a mat-flat-button routerLink="/register">Get an API key</a>
+  }
+</mat-toolbar>
+
+<main id="main" tabindex="-1">
+  <router-outlet />
+</main>

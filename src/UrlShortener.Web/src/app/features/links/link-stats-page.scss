@@ -1,0 +1,49 @@
+.short-url {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--mat-sys-title-large);
+  word-break: break-all;
+}
+
+.destination {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  color: var(--mat-sys-on-surface-variant);
+  overflow: hidden;
+  white-space: nowrap;
+
+  a {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.tile-label {
+  margin: 0;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-large);
+}
+
+.tile-value {
+  margin: 4px 0 0;
+  font: var(--mat-sys-headline-medium);
+  font-variant-numeric: tabular-nums;
+
+  &.small {
+    font: var(--mat-sys-title-medium);
+  }
+}
+
+h2 {
+  font: var(--mat-sys-title-medium);
+  margin: 0 0 12px;
+}

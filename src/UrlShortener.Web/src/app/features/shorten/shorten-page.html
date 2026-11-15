@@ -1,0 +1,85 @@
+<section class="hero">
+  <h1>Shorten a link</h1>
+  <p class="lede">
+    Paste a long URL to get a short one you can share.
+    @if (auth.isSignedIn()) {
+      New links are saved to <a routerLink="/links">your links</a>.
+    } @else {
+      <a routerLink="/sign-in">Sign in</a> or <a routerLink="/register">get an API key</a> to keep
+      track of your links and get higher limits.
+    }
+  </p>
+</section>
+
+<mat-card appearance="outlined">
+  @if (submitting()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+  <mat-card-content>
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <mat-form-field class="long-url">
+        <mat-label>Long URL</mat-label>
+        <input
+          matInput
+          formControlName="longUrl"
+          type="url"
+          inputmode="url"
+          autocomplete="url"
+          placeholder="https://example.com/a/very/long/path"
+        />
+        @if (form.controls.longUrl.hasError('required')) {
+          <mat-error>Enter the URL to shorten.</mat-error>
+        } @else if (form.controls.longUrl.hasError('httpUrl')) {
+          <mat-error>Enter a full URL that starts with http:// or https://.</mat-error>
+        } @else if (form.controls.longUrl.hasError('maxlength')) {
+          <mat-error>URLs can be up to {{ maxLength }} characters.</mat-error>
+        } @else if (form.controls.longUrl.hasError('server')) {
+          <mat-error>{{ form.controls.longUrl.getError('server') }}</mat-error>
+        }
+      </mat-form-field>
+
+      <div class="row">
+        <mat-form-field class="alias">
+          <mat-label>Custom alias (optional)</mat-label>
+          <input matInput formControlName="customAlias" autocomplete="off" spellcheck="false" />
+          <mat-hint>3–16 letters, digits, - or _</mat-hint>
+          @if (form.controls.customAlias.hasError('pattern')) {
+            <mat-error>Use 3–16 letters, digits, - or _.</mat-error>
+          } @else if (form.controls.customAlias.hasError('server')) {
+            <mat-error>{{ form.controls.customAlias.getError('server') }}</mat-error>
+          }
+        </mat-form-field>
+
+        <button mat-flat-button type="submit" [disabled]="submitting()">Shorten</button>
+      </div>
+    </form>
+
+    @if (error(); as message) {
+      <p class="error" role="alert"><mat-icon>error</mat-icon>{{ message }}</p>
+    }
+  </mat-card-content>
+</mat-card>
+
+@if (result(); as result) {
+  <mat-card appearance="outlined" class="result" role="status">
+    <mat-card-content>
+      <p class="result-label">
+        {{
+          result.created
+            ? 'Your short link is ready'
+            : 'You already shortened this URL. Here is the same link'
+        }}
+      </p>
+      <div class="short-url">
+        <a [href]="result.link.shortUrl" target="_blank" rel="noopener">{{
+          result.link.shortUrl
+        }}</a>
+        <app-copy-button [value]="result.link.shortUrl" label="Copy short link" />
+      </div>
+      <p class="long-url-echo" [title]="result.link.longUrl">{{ result.link.longUrl }}</p>
+      <a mat-button [routerLink]="['/links', result.link.code]"
+        ><mat-icon>bar_chart</mat-icon>View stats</a
+      >
+    </mat-card-content>
+  </mat-card>
+}

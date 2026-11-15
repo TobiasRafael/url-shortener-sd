@@ -1,0 +1,54 @@
+:host {
+  display: block;
+  max-width: 560px;
+}
+
+h1 {
+  font: var(--mat-sys-headline-medium);
+  margin: 0 0 16px;
+}
+
+form {
+  display: grid;
+  gap: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.secret {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--mat-sys-surface-container-high);
+
+  code {
+    flex: 1;
+    word-break: break-all;
+  }
+}
+
+.warning,
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.warning {
+  color: var(--mat-sys-on-surface);
+}
+
+.error {
+  color: var(--mat-sys-error);
+}
+
+.hint {
+  color: var(--mat-sys-on-surface-variant);
+}

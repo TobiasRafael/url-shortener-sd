@@ -1,0 +1,69 @@
+<header class="page-header">
+  <h1>Link stats</h1>
+  <mat-button-toggle-group
+    aria-label="Time window"
+    hideSingleSelectionIndicator
+    [value]="days()"
+    (change)="days.set($event.value)"
+  >
+    @for (window of windows; track window) {
+      <mat-button-toggle [value]="window">{{ window }} days</mat-button-toggle>
+    }
+  </mat-button-toggle-group>
+</header>
+
+@if (stats.isLoading()) {
+  <mat-progress-bar mode="indeterminate" />
+}
+
+@if (error(); as message) {
+  <p class="error" role="alert">
+    <mat-icon>error</mat-icon>{{ message }}
+    <a mat-button routerLink="/">Shorten a link</a>
+  </p>
+} @else if (stats.hasValue()) {
+  @let s = stats.value();
+  <mat-card appearance="outlined">
+    <mat-card-content>
+      <div class="short-url">
+        <a [href]="s.shortUrl" target="_blank" rel="noopener">{{ s.shortUrl }}</a>
+        <app-copy-button [value]="s.shortUrl" label="Copy short link" />
+      </div>
+      <p class="destination" [title]="s.longUrl">
+        <mat-icon inline>arrow_forward</mat-icon>
+        <a [href]="s.longUrl" target="_blank" rel="noopener noreferrer">{{ s.longUrl }}</a>
+      </p>
+    </mat-card-content>
+  </mat-card>
+
+  <div class="tiles">
+    <mat-card appearance="outlined">
+      <mat-card-content>
+        <p class="tile-label">Total clicks</p>
+        <p class="tile-value">{{ s.totalClicks | number }}</p>
+      </mat-card-content>
+    </mat-card>
+    <mat-card appearance="outlined">
+      <mat-card-content>
+        <p class="tile-label">Last {{ days() }} days</p>
+        <p class="tile-value">{{ windowTotal() | number }}</p>
+      </mat-card-content>
+    </mat-card>
+    <mat-card appearance="outlined">
+      <mat-card-content>
+        <p class="tile-label">Last click</p>
+        <p class="tile-value small">
+          {{ s.lastClickedAt ? (s.lastClickedAt | date: 'medium') : 'No clicks yet' }}
+        </p>
+      </mat-card-content>
+    </mat-card>
+  </div>
+
+  <mat-card appearance="outlined">
+    <mat-card-content>
+      <h2>Clicks per day <span class="hint">(UTC)</span></h2>
+      <app-daily-clicks-chart [daily]="s.daily" />
+      <p class="hint">Clicks are counted a few seconds after they happen.</p>
+    </mat-card-content>
+  </mat-card>
+}

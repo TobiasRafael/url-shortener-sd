@@ -53,7 +53,7 @@ var checkpoints = builder.AddAzureStorage("storage")
     .AddBlobs("checkpoints");
 
 // ---- API: REST endpoints and redirects --------------------------------------------------------
-builder.AddProject<Projects.UrlShortener_Api>("api")
+var api = builder.AddProject<Projects.UrlShortener_Api>("api")
     .WithReference(cosmos)
     .WaitFor(cosmos)
     .WithReference(cache)
@@ -89,5 +89,28 @@ builder.AddProject<Projects.UrlShortener_AnalyticsWorker>("analytics-worker")
     .WithReference(cosmos)
     .WaitFor(cosmos)
     .WithEnvironment("Storage__Provider", "Cosmos");
+
+// ---- Web app: Angular ------------------------------------------------------------------------
+// `ng serve` (npm start) on the port Aspire picks, proxying /api to the API through service
+// discovery (proxy.conf.js), so the browser only ever talks to one origin. How it is served when
+// deployed (static files plus an /api proxy) is decided with the deployment.
+var web = builder.AddJavaScriptApp("web", "../UrlShortener.Web", "start")
+    .WithHttpEndpoint(env: "PORT")
+    .WithExternalHttpEndpoints()
+    .WithHttpHealthCheck("/")
+    .WithReference(api)
+    .WaitFor(api);
+
+// Aspire runs `npm run start`; everything after `--` reaches `ng serve`, which takes its port as a
+// flag rather than from PORT.
+web.WithArgs(context =>
+{
+    context.Args.Add("--");
+    context.Args.Add("--port");
+    context.Args.Add(web.GetEndpoint("http").Property(EndpointProperty.TargetPort));
+});
+
+// A visit to the short domain's root (the API) is sent on to the web app.
+api.WithEnvironment("ShortLinks__FrontendUrl", web.GetEndpoint("http"));
 
 builder.Build().Run();

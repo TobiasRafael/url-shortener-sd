@@ -1,0 +1,62 @@
+<header class="page-header">
+  <h1>My links</h1>
+  <a mat-flat-button routerLink="/"><mat-icon>add_link</mat-icon>Shorten a link</a>
+</header>
+
+@if (loading()) {
+  <mat-progress-bar mode="indeterminate" />
+} @else if (error(); as message) {
+  <p class="error" role="alert">
+    <mat-icon>error</mat-icon>{{ message }}
+    <button mat-button type="button" (click)="load()">Try again</button>
+  </p>
+} @else if (links().length === 0) {
+  <p class="empty">
+    You haven't shortened any links yet. <a routerLink="/">Shorten your first one</a>.
+  </p>
+} @else {
+  <div class="table-scroll">
+    <table mat-table [dataSource]="links()">
+      <caption class="visually-hidden">
+        Your short links, newest first
+      </caption>
+
+      <ng-container matColumnDef="shortUrl">
+        <th mat-header-cell *matHeaderCellDef scope="col">Short link</th>
+        <td mat-cell *matCellDef="let link">
+          <a [href]="link.shortUrl" target="_blank" rel="noopener">{{ link.shortUrl }}</a>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="longUrl">
+        <th mat-header-cell *matHeaderCellDef scope="col">Destination</th>
+        <td mat-cell *matCellDef="let link" class="truncate" [title]="link.longUrl">
+          {{ link.longUrl }}
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="createdAt">
+        <th mat-header-cell *matHeaderCellDef scope="col">Created</th>
+        <td mat-cell *matCellDef="let link" class="nowrap">
+          {{ link.createdAt | date: 'mediumDate' }}
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="actions">
+        <th mat-header-cell *matHeaderCellDef scope="col">
+          <span class="visually-hidden">Actions</span>
+        </th>
+        <td mat-cell *matCellDef="let link" class="nowrap">
+          <app-copy-button [value]="link.shortUrl" label="Copy short link" />
+          <a mat-button [routerLink]="['/links', link.code]" matTooltip="Clicks per day">Stats</a>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="columns"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns"></tr>
+    </table>
+  </div>
+  @if (links().length === limit) {
+    <p class="hint">Showing your {{ limit }} most recent links.</p>
+  }
+}
