@@ -41,15 +41,82 @@ public sealed class AppModelTests
     }
 
     [Fact]
+    public async Task The_api_publishes_clicks_to_the_clicks_event_hub()
+    {
+        await using var builder = await CreateAsync();
+        var api = Resource<ProjectResource>(builder, "api");
+
+        var env = await PublishedEnvironmentAsync(api);
+
+        env.ShouldContainKeyAndValue("Analytics__Pipeline", "EventHubs");
+        // AnalyticsOptions.EventHubConnectionName defaults to "clicks", the hub resource's name.
+        env.ShouldContainKey("ConnectionStrings__clicks");
+    }
+
+    [Fact]
     public async Task The_api_starts_only_after_its_dependencies_and_is_reachable_from_outside()
     {
         await using var builder = await CreateAsync();
         var api = Resource<ProjectResource>(builder, "api");
 
         api.TryGetAnnotationsOfType<WaitAnnotation>(out var waits).ShouldBeTrue();
-        waits.Select(w => w.Resource.Name).ShouldBe(["cosmos", "cache"], ignoreOrder: true);
+        waits.Select(w => w.Resource.Name).ShouldBe(["cosmos", "cache", "eventhubs"], ignoreOrder: true);
         api.Annotations.OfType<EndpointAnnotation>().ShouldContain(e => e.IsExternal);
         api.Annotations.OfType<HealthCheckAnnotation>().ShouldNotBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_worker_reads_its_consumer_group_checkpoints_to_blobs_and_writes_stats_to_cosmos()
+    {
+        await using var builder = await CreateAsync();
+        var worker = Resource<ProjectResource>(builder, "analytics-worker");
+
+        var env = await PublishedEnvironmentAsync(worker);
+
+        env.ShouldContainKeyAndValue("Storage__Provider", "Cosmos");
+        // The default connection names in ClickConsumerOptions and CosmosStorageOptions.
+        env.ShouldContainKey("ConnectionStrings__clicks-analytics");
+        env.ShouldContainKey("ConnectionStrings__checkpoints");
+        env.ShouldContainKey("ConnectionStrings__cosmos");
+        // It never generates codes, so it gets no short-code secret.
+        env.ShouldNotContainKey("ShortCodes__Secret");
+    }
+
+    [Fact]
+    public async Task The_worker_starts_after_its_dependencies_and_exposes_nothing()
+    {
+        await using var builder = await CreateAsync();
+        var worker = Resource<ProjectResource>(builder, "analytics-worker");
+
+        worker.TryGetAnnotationsOfType<WaitAnnotation>(out var waits).ShouldBeTrue();
+        // Waiting for the blob service also waits for the storage account it belongs to.
+        waits.Select(w => w.Resource.Name).ShouldBe(["eventhubs", "storage", "checkpoints", "cosmos"], ignoreOrder: true);
+        worker.Annotations.OfType<EndpointAnnotation>().ShouldNotContain(e => e.IsExternal);
+    }
+
+    [Fact]
+    public async Task Clicks_flow_through_a_hub_with_a_dedicated_consumer_group()
+    {
+        await using var builder = await CreateAsync();
+        var eventHubs = Resource<AzureEventHubsResource>(builder, "eventhubs");
+        var hub = Resource<AzureEventHubResource>(builder, "clicks");
+        var group = Resource<AzureEventHubConsumerGroupResource>(builder, "clicks-analytics");
+
+        eventHubs.IsEmulator.ShouldBeTrue();
+        hub.HubName.ShouldBe("clicks");
+        group.Parent.ShouldBeSameAs(hub);
+        group.ConsumerGroupName.ShouldBe("analytics");
+    }
+
+    [Fact]
+    public async Task Checkpoints_live_in_the_storage_emulator()
+    {
+        await using var builder = await CreateAsync();
+        var storage = Resource<AzureStorageResource>(builder, "storage");
+        var blobs = Resource<AzureBlobStorageResource>(builder, "checkpoints");
+
+        storage.IsEmulator.ShouldBeTrue();
+        blobs.Parent.ShouldBeSameAs(storage);
     }
 
     [Fact]

@@ -16,6 +16,7 @@
   <ItemGroup>
     <Using Include="Aspire.Hosting" />
     <Using Include="Aspire.Hosting.ApplicationModel" />
+    <Using Include="Aspire.Hosting.Azure" />
     <Using Include="Aspire.Hosting.Testing" />
     <Using Include="Shouldly" />
     <Using Include="Xunit" />
