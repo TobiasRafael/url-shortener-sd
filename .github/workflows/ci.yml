@@ -59,6 +59,16 @@ jobs:
       - name: Aspire CLI version
         run: aspire --version
 
+      # Aspire runs the Cosmos emulator over HTTPS with the development certificate. Without a
+      # trusted one it starts the emulator on plain HTTP while its own client still speaks TLS, and
+      # the API never starts. On Linux, `aspire certs trust` creates and trusts the certificate
+      # without a prompt; OpenSSL only sees it through SSL_CERT_DIR
+      # (https://aka.ms/aspire/devcerts).
+      - name: Trust the HTTPS development certificate
+        run: |
+          aspire certs trust
+          echo "SSL_CERT_DIR=/usr/lib/ssl/certs:$HOME/.aspnet/dev-certs/trust" >> "$GITHUB_ENV"
+
       - name: Restore
         run: dotnet restore UrlShortener.slnx
 
