@@ -1,0 +1,69 @@
+<h1>Get an API key</h1>
+
+<mat-card appearance="outlined">
+  @if (busy()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+  <mat-card-content>
+    @if (registered(); as registered) {
+      <p>Welcome, {{ registered.name }}. This is your API key:</p>
+      <div class="secret">
+        <code>{{ registered.apiKey }}</code>
+        <app-copy-button [value]="registered.apiKey" label="Copy API key" />
+      </div>
+      <p class="warning" role="alert">
+        <mat-icon>warning</mat-icon>
+        Copy it now and keep it somewhere safe. It is shown only once and can't be recovered.
+      </p>
+      <p class="hint">
+        Use it to sign in here, or send it as the <code>X-Api-Key</code> header when you call the
+        API.
+      </p>
+      <mat-checkbox [checked]="remember()" (change)="remember.set($event.checked)"
+        >Remember me on this device</mat-checkbox
+      >
+      <div class="actions">
+        <button mat-flat-button type="button" [disabled]="busy()" (click)="continue()">
+          Continue to my links
+        </button>
+      </div>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <mat-form-field>
+          <mat-label>Name</mat-label>
+          <input matInput formControlName="name" autocomplete="name" />
+          @if (form.controls.name.hasError('required')) {
+            <mat-error>Enter your name.</mat-error>
+          } @else if (form.controls.name.hasError('maxlength')) {
+            <mat-error>Names can be up to 100 characters.</mat-error>
+          } @else if (form.controls.name.hasError('server')) {
+            <mat-error>{{ form.controls.name.getError('server') }}</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label>Email</mat-label>
+          <input matInput formControlName="email" type="email" autocomplete="email" />
+          @if (form.controls.email.hasError('required')) {
+            <mat-error>Enter your email.</mat-error>
+          } @else if (
+            form.controls.email.hasError('email') || form.controls.email.hasError('maxlength')
+          ) {
+            <mat-error>Enter a valid email address.</mat-error>
+          } @else if (form.controls.email.hasError('server')) {
+            <mat-error>{{ form.controls.email.getError('server') }}</mat-error>
+          }
+        </mat-form-field>
+
+        <div class="actions">
+          <button mat-flat-button type="submit" [disabled]="busy()">Create API key</button>
+          <a mat-button routerLink="/sign-in">I already have a key</a>
+        </div>
+      </form>
+    }
+
+    @if (error(); as message) {
+      <p class="error" role="alert"><mat-icon>error</mat-icon>{{ message }}</p>
+    }
+  </mat-card-content>
+</mat-card>

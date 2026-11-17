@@ -35,6 +35,13 @@ jobs:
         with:
           global-json-file: global.json
 
+      # The running-app tests start the web app too (npm install + ng serve through Aspire).
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: src/UrlShortener.Web/.nvmrc
+          cache: npm
+          cache-dependency-path: src/UrlShortener.Web/package-lock.json
+
       - name: Cache NuGet packages
         uses: actions/cache@v6
         with:
@@ -76,9 +83,42 @@ jobs:
         run: dotnet build UrlShortener.slnx -c Release --no-restore
 
       # Docker is available on ubuntu-latest, so the Cosmos contract tests and the running-app
-      # tests (Cosmos, Event Hubs, Azurite and Redis emulators) run for real. REQUIRE_COSMOS_EMULATOR
-      # turns "emulator unavailable" into a failure instead of a skip.
+      # tests (web app, Cosmos, Event Hubs, Azurite and Redis emulators) run for real.
+      # REQUIRE_COSMOS_EMULATOR turns "emulator unavailable" into a failure instead of a skip.
       - name: Test
         env:
           REQUIRE_COSMOS_EMULATOR: true
         run: dotnet test --solution UrlShortener.slnx -c Release --no-build
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: src/UrlShortener.Web
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: src/UrlShortener.Web/.nvmrc
+          cache: npm
+          cache-dependency-path: src/UrlShortener.Web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Test
+        run: npm test -- --watch=false
+
+      # The production configuration enforces the bundle budgets in angular.json.
+      - name: Build
+        run: npm run build

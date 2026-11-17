@@ -1,0 +1,57 @@
+<header class="page-header">
+  <h1>Top links</h1>
+</header>
+<p class="hint">The {{ limit }} most clicked links across the service, all time.</p>
+
+@if (top.isLoading()) {
+  <mat-progress-bar mode="indeterminate" />
+} @else if (error(); as message) {
+  <p class="error" role="alert">
+    <mat-icon>error</mat-icon>{{ message }}
+    <button mat-button type="button" (click)="top.reload()">Try again</button>
+  </p>
+} @else if (top.hasValue() && top.value().length === 0) {
+  <p class="empty">No clicks yet. Share a short link and check back.</p>
+} @else if (top.hasValue()) {
+  <div class="table-scroll">
+    <table mat-table [dataSource]="top.value()">
+      <caption class="visually-hidden">
+        Most clicked links, most clicks first
+      </caption>
+
+      <ng-container matColumnDef="rank">
+        <th mat-header-cell *matHeaderCellDef scope="col">#</th>
+        <td mat-cell *matCellDef="let link; let i = index" class="numeric">{{ i + 1 }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="shortUrl">
+        <th mat-header-cell *matHeaderCellDef scope="col">Short link</th>
+        <td mat-cell *matCellDef="let link">
+          <a [routerLink]="['/links', link.code]">{{ link.shortUrl }}</a>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="longUrl">
+        <th mat-header-cell *matHeaderCellDef scope="col">Destination</th>
+        <td mat-cell *matCellDef="let link" class="truncate" [title]="link.longUrl ?? ''">
+          {{ link.longUrl ?? 'Deleted link' }}
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="totalClicks">
+        <th mat-header-cell *matHeaderCellDef scope="col" class="numeric">Clicks</th>
+        <td mat-cell *matCellDef="let link" class="numeric">{{ link.totalClicks | number }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="lastClickedAt">
+        <th mat-header-cell *matHeaderCellDef scope="col">Last click</th>
+        <td mat-cell *matCellDef="let link" class="nowrap">
+          {{ link.lastClickedAt ? (link.lastClickedAt | date: 'medium') : '—' }}
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="columns"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns"></tr>
+    </table>
+  </div>
+}
